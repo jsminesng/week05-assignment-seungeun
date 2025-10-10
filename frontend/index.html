@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>React Todo 앱</title>
+    <!-- React CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      const API_URL = "http://localhost:3002/api/todos";
+      // 여기에 React 코드 작성
+      function TodoApp() {
+        const [todos, setTodos] = React.useState([]);
+        const [inputText, setInputText] = React.useState("");
+
+        //추가
+        React.useEffect(() => {
+          fetch(API_URL).then((res) =>
+            res
+              .json()
+              .then((data) => {
+                if (data.success) {
+                  setTodos(data.data);
+                }
+              })
+              .catch((err) => console.error("조회 실패:", err))
+          );
+        }, []);
+
+        async function addTodo(text) {
+          try {
+            const response = await fetch(API_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+              console.error("추가 실패:", data?.error || response.statusText);
+              return;
+            }
+
+            setTodos([data.data, ...todos]);
+            setInputText("");
+          } catch (err) {
+            console.error("추가 실패:", err);
+          }
+        }
+
+        async function toggleTodo(id) {
+          const todo = todos.find((t) => t.id === id);
+          try {
+            const response = await fetch(`${API_URL}/${id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ completed: !todo.completed }),
+            });
+            const data = await response.json();
+            if (data.success) {
+              setTodos(todos.map((t) => (t.id === id ? data.data : t)));
+            }
+          } catch (err) {
+            console.error("수정 실패:", err);
+          }
+        }
+
+        async function deleteTodo(id) {
+          try {
+            const response = await fetch(`${API_URL}/${id}`, {
+              method: "DELETE",
+            });
+            if (response.status === 204) {
+              setTodos(todos.filter((t) => t.id !== id));
+            }
+          } catch (err) {
+            console.error("삭제 실패:", err);
+          }
+        }
+        //통계
+        const total = todos.length;
+        const completed = todos.filter((todo) => todo.completed).length;
+        const remaining = total - completed;
+
+        return (
+          <div className="max-w-2xl mx-auto p-6">
+            {/*헤더*/}
+            <header className="text-center mb-8">
+              <h1 className="text-4xl font-bold text-blue-600 mb-2">
+                📝 나만의 Todo 리스트
+              </h1>
+              <p className="text-center-gray-600">
+                Week4 과제 - React 프론트엔드 + Express 백엔드
+              </p>
+            </header>
+
+            {/*Todo 추가 영역*/}
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                할일 추가하기
+              </h2>
+
+              {/*입력 폼*/}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)} // 글자 입력 시 상태 업데이트
+                  onKeyDown={(e) => {
+                    // 한글 깨짐 방지
+                    if (e.isComposing || e.keyCode === 229) return;
+                    // 엔터키
+                    if (e.key === "Enter") addTodo(inputText);
+                  }}
+                  placeholder="새로운 할일을 입력하세요..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+
+                <button
+                  onClick={() => addTodo(inputText)}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                >
+                  추가
+                </button>
+              </div>
+            </div>
+
+            {/*Todo 목록 영역*/}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                할일 목록
+              </h2>
+              {/*Todo 항목들이 여기에 추가됩니다 */}
+              {todos.length === 0 ? (
+                <div
+                  id="emptyMessage"
+                  className="text-center text-gray-500 py-8"
+                >
+                  아직 할일이 없습니다. 새로운 할일을 추가해보세요! 🎯
+                </div>
+              ) : (
+                todos.map((todo) => (
+                  <div key={todo.id} className="space-y-2">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <input
+                        type="checkbox"
+                        checked={todo.completed}
+                        onChange={() => toggleTodo(todo.id)}
+                        className="w-5 h-5 text-blue-600"
+                      />
+                      <span
+                        className={`flex-1 text-gray-700 ${
+                          todo.completed ? "line-through text-gray-400" : ""
+                        }`}
+                      >
+                        {todo.text}
+                      </span>
+                      <button
+                        onClick={() => deleteTodo(todo.id)}
+                        className="text-red-500 hover:text-red-700 px-2 py-1 rounded"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {/*목록이 비어있을 때 메시지 */}
+            </div>
+
+            {/*통계 정보 (선택 과제)*/}
+            <div className="bg-white rounded-lg shadow-md p-6 mt-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                📊 진행 현황
+              </h3>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div
+                    id="totalCount"
+                    className="text-2xl font-bold text-blue-600"
+                  >
+                    {total}
+                  </div>
+                  <div className="text-sm text-gray-500">전체</div>
+                </div>
+                <div>
+                  <div
+                    id="completedCount"
+                    className="text-2xl font-bold text-green-600"
+                  >
+                    {completed}
+                  </div>
+                  <div className="text-sm text-gray-500">완료</div>
+                </div>
+                <div>
+                  <div
+                    id="remainingCount"
+                    className="text-2xl font-bold text-orange-600"
+                  >
+                    {remaining}
+                  </div>
+                  <div className="text-sm text-gray-500">남은 일</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<TodoApp />);
+    </script>
+  </body>
+</html>
