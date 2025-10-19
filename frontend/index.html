@@ -3,217 +3,668 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>React Todo 앱</title>
-    <!-- React CDN -->
+    <title>Supabase Todo App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              inter: ["Inter", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+    <!-- React -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Supabase -->
+    <script src="https://unpkg.com/@supabase/supabase-js"></script>
+    <!-- LLM Service -->
+    <script src="./llmService.js"></script>
+    <!-- Config (API Keys) -->
+    <script>
+      window.SUPABASE_CONFIG = {
+        url: "https://isofapizsnpkglrvqvnd.supabase.co",
+        key: "sb_publishable_ZkTRJoBig3qJneYG2xwrXw_-CMlfr3b",
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>
+
     <script type="text/babel">
-      const API_URL = "http://localhost:3002/api/todos";
-      // 여기에 React 코드 작성
-      function TodoApp() {
-        const [todos, setTodos] = React.useState([]);
-        const [inputText, setInputText] = React.useState("");
+      // 🔐 Supabase 클라이언트 생성 (config.js에서 설정 가져오기)
+      const supabase = window.supabase.createClient(
+        window.SUPABASE_CONFIG.url,
+        window.SUPABASE_CONFIG.key
+      );
 
-        //추가
-        React.useEffect(() => {
-          fetch(API_URL).then((res) =>
-            res
-              .json()
-              .then((data) => {
-                if (data.success) {
-                  setTodos(data.data);
-                }
-              })
-              .catch((err) => console.error("조회 실패:", err))
-          );
-        }, []);
+      // ============================================
+      // 🔐 인증 컴포넌트 (로그인/회원가입)
+      // ============================================
+      function AuthApp() {
+        const [isLogin, setIsLogin] = React.useState(true);
+        const [email, setEmail] = React.useState("");
+        const [password, setPassword] = React.useState("");
+        const [loading, setLoading] = React.useState(false);
+        const [message, setMessage] = React.useState("");
 
-        async function addTodo(text) {
+        async function handleAuth(e) {
+          e.preventDefault();
+          setLoading(true);
+          setMessage("");
+
           try {
-            const response = await fetch(API_URL, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text }),
-            });
-            const data = await response.json();
-            if (!response.ok || !data.success) {
-              console.error("추가 실패:", data?.error || response.statusText);
-              return;
+            if (isLogin) {
+              // 로그인
+              const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+              });
+              if (error) throw error;
+              setMessage("Sign in successful! 🎉");
+            } else {
+              // 회원가입
+              const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+              });
+              if (error) throw error;
+              setMessage("Sign up successful! Please check your email. ✉️");
             }
-
-            setTodos([data.data, ...todos]);
-            setInputText("");
-          } catch (err) {
-            console.error("추가 실패:", err);
+          } catch (error) {
+            setMessage(error.message);
+          } finally {
+            setLoading(false);
           }
         }
-
-        async function toggleTodo(id) {
-          const todo = todos.find((t) => t.id === id);
-          try {
-            const response = await fetch(`${API_URL}/${id}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ completed: !todo.completed }),
-            });
-            const data = await response.json();
-            if (data.success) {
-              setTodos(todos.map((t) => (t.id === id ? data.data : t)));
-            }
-          } catch (err) {
-            console.error("수정 실패:", err);
-          }
-        }
-
-        async function deleteTodo(id) {
-          try {
-            const response = await fetch(`${API_URL}/${id}`, {
-              method: "DELETE",
-            });
-            if (response.status === 204) {
-              setTodos(todos.filter((t) => t.id !== id));
-            }
-          } catch (err) {
-            console.error("삭제 실패:", err);
-          }
-        }
-        //통계
-        const total = todos.length;
-        const completed = todos.filter((todo) => todo.completed).length;
-        const remaining = total - completed;
 
         return (
-          <div className="max-w-2xl mx-auto p-6">
-            {/*헤더*/}
-            <header className="text-center mb-8">
-              <h1 className="text-4xl font-bold text-blue-600 mb-2">
-                📝 나만의 Todo 리스트
-              </h1>
-              <p className="text-center-gray-600">
-                Week4 과제 - React 프론트엔드 + Express 백엔드
-              </p>
-            </header>
-
-            {/*Todo 추가 영역*/}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                할일 추가하기
-              </h2>
-
-              {/*입력 폼*/}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)} // 글자 입력 시 상태 업데이트
-                  onKeyDown={(e) => {
-                    // 한글 깨짐 방지
-                    if (e.isComposing || e.keyCode === 229) return;
-                    // 엔터키
-                    if (e.key === "Enter") addTodo(inputText);
-                  }}
-                  placeholder="새로운 할일을 입력하세요..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                />
-
-                <button
-                  onClick={() => addTodo(inputText)}
-                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                >
-                  추가
-                </button>
-              </div>
-            </div>
-
-            {/*Todo 목록 영역*/}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                할일 목록
-              </h2>
-              {/*Todo 항목들이 여기에 추가됩니다 */}
-              {todos.length === 0 ? (
-                <div
-                  id="emptyMessage"
-                  className="text-center text-gray-500 py-8"
-                >
-                  아직 할일이 없습니다. 새로운 할일을 추가해보세요! 🎯
-                </div>
-              ) : (
-                todos.map((todo) => (
-                  <div key={todo.id} className="space-y-2">
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                      <input
-                        type="checkbox"
-                        checked={todo.completed}
-                        onChange={() => toggleTodo(todo.id)}
-                        className="w-5 h-5 text-blue-600"
+          <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden w-full max-w-md">
+              {/* 헤더 */}
+              <div className="bg-white border-b border-gray-200 p-8 text-center">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="w-12 h-12 bg-gray-900 rounded-full flex items-center justify-center">
+                    <svg
+                      className="w-6 h-6 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
                       />
-                      <span
-                        className={`flex-1 text-gray-700 ${
-                          todo.completed ? "line-through text-gray-400" : ""
-                        }`}
-                      >
-                        {todo.text}
-                      </span>
-                      <button
-                        onClick={() => deleteTodo(todo.id)}
-                        className="text-red-500 hover:text-red-700 px-2 py-1 rounded"
-                      >
-                        삭제
-                      </button>
+                    </svg>
+                  </div>
+                </div>
+                <h1 className="text-2xl font-inter font-semibold text-gray-900 mb-1 tracking-tight">
+                  {isLogin ? "Sign In" : "Sign Up"}
+                </h1>
+                <p className="text-sm text-gray-500">
+                  {isLogin ? "Sign in to your account" : "Create a new account"}
+                </p>
+              </div>
+
+              {/* 폼 */}
+              <div className="p-8">
+                <form onSubmit={handleAuth} className="space-y-5">
+                  {/* 이메일 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      required
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition text-gray-900 placeholder-gray-400"
+                    />
+                  </div>
+
+                  {/* 비밀번호 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      required
+                      minLength={6}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition text-gray-900 placeholder-gray-400"
+                    />
+                  </div>
+
+                  {/* 메시지 */}
+                  {message && (
+                    <div
+                      className={`p-3 rounded-lg text-sm ${
+                        message.includes("success") ||
+                        message.includes("Success")
+                          ? "bg-green-50 text-green-700 border border-green-200"
+                          : "bg-red-50 text-red-700 border border-red-200"
+                      }`}
+                    >
+                      {message}
                     </div>
-                  </div>
-                ))
-              )}
+                  )}
 
-              {/*목록이 비어있을 때 메시지 */}
-            </div>
+                  {/* 로그인/회원가입 버튼 */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-gray-900 text-white font-medium py-2.5 rounded-lg hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading
+                      ? "Processing..."
+                      : isLogin
+                      ? "Sign In"
+                      : "Sign Up"}
+                  </button>
+                </form>
 
-            {/*통계 정보 (선택 과제)*/}
-            <div className="bg-white rounded-lg shadow-md p-6 mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                📊 진행 현황
-              </h3>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div
-                    id="totalCount"
-                    className="text-2xl font-bold text-blue-600"
+                {/* 전환 버튼 */}
+                <div className="mt-6 text-center">
+                  <button
+                    onClick={() => {
+                      setIsLogin(!isLogin);
+                      setMessage("");
+                      setEmail("");
+                      setPassword("");
+                    }}
+                    className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
                   >
-                    {total}
-                  </div>
-                  <div className="text-sm text-gray-500">전체</div>
-                </div>
-                <div>
-                  <div
-                    id="completedCount"
-                    className="text-2xl font-bold text-green-600"
-                  >
-                    {completed}
-                  </div>
-                  <div className="text-sm text-gray-500">완료</div>
-                </div>
-                <div>
-                  <div
-                    id="remainingCount"
-                    className="text-2xl font-bold text-orange-600"
-                  >
-                    {remaining}
-                  </div>
-                  <div className="text-sm text-gray-500">남은 일</div>
+                    {isLogin
+                      ? "Don't have an account? Sign Up"
+                      : "Already have an account? Sign In"}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         );
       }
+
+      // ============================================
+      // 📝 Todo 앱 컴포넌트
+      // ============================================
+      function TodoApp({ user, onLogout }) {
+        const [todos, setTodos] = React.useState([]);
+        const [inputText, setInputText] = React.useState("");
+
+        // AI Todo Breakdown 상태
+        const [aiTaskInput, setAiTaskInput] = React.useState("");
+        const [aiSteps, setAiSteps] = React.useState([]);
+        const [selectedSteps, setSelectedSteps] = React.useState([]);
+        const [isAiLoading, setIsAiLoading] = React.useState(false);
+        const [showAiSection, setShowAiSection] = React.useState(false);
+
+        // 📌 처음 로딩 시 DB에서 todos 불러오기
+        React.useEffect(() => {
+          loadTodos();
+        }, []);
+
+        async function loadTodos() {
+          const { data, error } = await supabase
+            .from("todos")
+            .select("*")
+            .eq("user_id", user.id); // 자기 것만 가져오기
+          if (!error) setTodos(data);
+        }
+
+        async function addTodo(text) {
+          if (!text.trim()) return;
+          const { data, error } = await supabase
+            .from("todos")
+            .insert([{ text, completed: false, user_id: user.id }]) // 여기 중요!
+            .select();
+          if (!error && data) {
+            setTodos([data[0], ...todos]);
+            setInputText("");
+          }
+        }
+
+        // 📌 Todo 완료 토글
+        async function toggleTodo(todo) {
+          const { data, error } = await supabase
+            .from("todos")
+            .update({ completed: !todo.completed })
+            .eq("id", todo.id)
+            .eq("user_id", user.id) // 본인의 Todo만 수정 가능하도록
+            .select();
+          if (error) {
+            console.error("수정 실패:", error);
+          } else {
+            setTodos(todos.map((t) => (t.id === todo.id ? data[0] : t)));
+          }
+        }
+
+        // 📌 Todo 삭제
+        async function deleteTodo(id) {
+          const { error } = await supabase
+            .from("todos")
+            .delete()
+            .eq("id", id)
+            .eq("user_id", user.id); // 본인의 Todo만 삭제 가능하도록
+          if (error) {
+            console.error("삭제 실패:", error);
+          } else {
+            setTodos(todos.filter((t) => t.id !== id));
+          }
+        }
+
+        // 📌 전체 Todo 삭제
+        async function deleteAllTodos() {
+          if (todos.length === 0) return;
+
+          const confirmed = window.confirm(
+            `Are you sure you want to delete all ${todos.length} todos?\nThis action cannot be undone.`
+          );
+
+          if (!confirmed) return;
+
+          const { error } = await supabase
+            .from("todos")
+            .delete()
+            .eq("user_id", user.id); // 본인의 모든 Todo 삭제
+
+          if (error) {
+            console.error("전체 삭제 실패:", error);
+            alert("An error occurred while deleting all todos.");
+          } else {
+            setTodos([]);
+            alert("All todos have been deleted successfully.");
+          }
+        }
+
+        // 로그아웃
+        async function handleLogout() {
+          await supabase.auth.signOut();
+          onLogout();
+        }
+
+        // 🤖 AI Todo Breakdown 함수들
+        async function handleAIBreakdown() {
+          const task = aiTaskInput.trim();
+
+          if (!task) {
+            alert("큰 작업을 입력하세요!");
+            return;
+          }
+
+          setIsAiLoading(true);
+          setAiSteps([]);
+          setSelectedSteps([]);
+
+          try {
+            console.log("🤖 AI 요청 시작:", task);
+
+            // LLMService를 사용하여 AI 요청
+            const text = await LLMService.generate(task);
+            console.log("✅ AI 응답 받음:", text);
+
+            const steps = LLMService._parseSteps(text);
+            setAiSteps(steps);
+            setShowAiSection(true);
+          } catch (error) {
+            console.error("❌ AI 요청 실패:", error);
+
+            let message = "AI 요청 실패";
+            if (error.message.includes("connect")) {
+              message =
+                "Express 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.";
+            } else if (error.message.includes("API")) {
+              message = "API 키 오류입니다. .env 파일을 확인하세요.";
+            } else if (error.message.includes("Too many")) {
+              message = "요청이 너무 많습니다. 잠시 후 다시 시도하세요.";
+            }
+
+            alert(message);
+          } finally {
+            setIsAiLoading(false);
+          }
+        }
+
+        // AI 단계 선택/해제
+        function toggleStepSelection(index) {
+          setSelectedSteps((prev) =>
+            prev.includes(index)
+              ? prev.filter((i) => i !== index)
+              : [...prev, index]
+          );
+        }
+
+        // 선택한 단계들을 Todo에 추가
+        async function addSelectedStepsToTodos() {
+          const stepsToAdd = selectedSteps.map((index) => aiSteps[index]);
+
+          if (stepsToAdd.length === 0) {
+            alert("추가할 단계를 선택하세요!");
+            return;
+          }
+
+          try {
+            for (const step of stepsToAdd) {
+              await addTodo(step);
+            }
+
+            // AI 섹션 초기화
+            setAiSteps([]);
+            setSelectedSteps([]);
+            setAiTaskInput("");
+            setShowAiSection(false);
+
+            alert(`${stepsToAdd.length}개의 단계가 Todo에 추가되었습니다!`);
+          } catch (error) {
+            console.error("Todo 추가 실패:", error);
+            alert("Todo 추가 중 오류가 발생했습니다.");
+          }
+        }
+
+        // 통계
+        const total = todos.length;
+        const completed = todos.filter((t) => t.completed).length;
+        const remaining = total - completed;
+
+        return (
+          <div className="min-h-screen bg-gray-50 p-6">
+            <div className="max-w-2xl mx-auto">
+              {/* 헤더 */}
+              <header className="mb-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex-1"></div>
+                  <div className="flex-1 text-center">
+                    <h1 className="text-4xl font-inter font-semibold text-gray-900 tracking-tight">
+                      TodoList
+                    </h1>
+                  </div>
+                  <div className="flex-1 flex flex-col items-end">
+                    <button
+                      onClick={handleLogout}
+                      className="text-sm text-gray-600 hover:text-gray-900 px-4 py-2 rounded-lg border border-gray-300 hover:border-gray-900 transition-colors"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </header>
+
+              {/* AI Todo Breakdown */}
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl border border-purple-200 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-medium text-purple-700">
+                    🤖 AI Todo Breakdown
+                  </h2>
+                  <button
+                    onClick={() => setShowAiSection(!showAiSection)}
+                    className="text-xs text-purple-600 hover:text-purple-700 px-3 py-1 rounded-md border border-purple-200 hover:border-purple-300 transition-colors"
+                  >
+                    {showAiSection ? "Hide" : "Show"}
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={aiTaskInput}
+                      onChange={(e) => setAiTaskInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAIBreakdown();
+                      }}
+                      placeholder="Enter a big task (e.g., 'Build a blog with React and Supabase')..."
+                      className="flex-1 px-4 py-2.5 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-gray-900 placeholder-gray-400"
+                    />
+                    <button
+                      onClick={handleAIBreakdown}
+                      disabled={isAiLoading || !aiTaskInput.trim()}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
+                    >
+                      {isAiLoading ? "🤖 AI Thinking..." : "Break Down"}
+                    </button>
+                  </div>
+
+                  {showAiSection && aiSteps.length > 0 && (
+                    <div className="bg-white rounded-lg border border-purple-200 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-medium text-gray-700">
+                          AI Generated Steps ({aiSteps.length})
+                        </h3>
+                        <button
+                          onClick={addSelectedStepsToTodos}
+                          disabled={selectedSteps.length === 0}
+                          className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1 rounded-md transition-colors"
+                        >
+                          Add Selected ({selectedSteps.length})
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {aiSteps.map((step, index) => (
+                          <div
+                            key={index}
+                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                              selectedSteps.includes(index)
+                                ? "bg-purple-100 border border-purple-300"
+                                : "hover:bg-gray-50"
+                            }`}
+                            onClick={() => toggleStepSelection(index)}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedSteps.includes(index)}
+                              onChange={() => toggleStepSelection(index)}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className="flex-1 text-sm text-gray-700">
+                              {step}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Todo 추가 */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+                <h2 className="text-sm font-medium text-gray-700 mb-3">
+                  Add New Todo
+                </h2>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addTodo(inputText);
+                    }}
+                    placeholder="Enter a todo..."
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none text-gray-900 placeholder-gray-400"
+                  />
+                  <button
+                    onClick={() => addTodo(inputText)}
+                    className="bg-gray-900 hover:bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Todo 목록 */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-sm font-medium text-gray-700">
+                      Todo List
+                    </h2>
+                    <span className="text-xs text-gray-500">
+                      {todos.length} items
+                    </span>
+                  </div>
+                  {todos.length > 0 && (
+                    <button
+                      onClick={deleteAllTodos}
+                      className="text-xs text-red-500 hover:text-red-700 px-3 py-1 rounded-md border border-red-200 hover:border-red-300 transition-colors"
+                    >
+                      Delete All
+                    </button>
+                  )}
+                </div>
+                {todos.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-gray-300 mb-2">
+                      <svg
+                        className="w-12 h-12 mx-auto"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-gray-400 text-sm">No todos yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {todos.map((todo) => (
+                      <div
+                        key={todo.id}
+                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={todo.completed}
+                          onChange={() => toggleTodo(todo)}
+                          className="w-4 h-4 text-gray-900 border-gray-300 rounded focus:ring-gray-900 cursor-pointer"
+                        />
+                        <span
+                          className={`flex-1 text-sm ${
+                            todo.completed
+                              ? "line-through text-gray-400"
+                              : "text-gray-700"
+                          }`}
+                        >
+                          {todo.text}
+                        </span>
+                        <button
+                          onClick={() => deleteTodo(todo.id)}
+                          className="text-gray-400 hover:text-gray-900 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 통계 */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6 mt-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-4">
+                  Progress
+                </h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-semibold text-gray-900 mb-1">
+                      {total}
+                    </div>
+                    <div className="text-xs text-gray-500">Total</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-semibold text-gray-900 mb-1">
+                      {completed}
+                    </div>
+                    <div className="text-xs text-gray-500">Completed</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-semibold text-gray-900 mb-1">
+                      {remaining}
+                    </div>
+                    <div className="text-xs text-gray-500">Remaining</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ============================================
+      // 🎯 메인 앱 컴포넌트
+      // ============================================
+      function App() {
+        const [user, setUser] = React.useState(null);
+        const [loading, setLoading] = React.useState(true);
+
+        React.useEffect(() => {
+          // 현재 세션 확인
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            setLoading(false);
+          });
+
+          // 인증 상태 변화 감지
+          const {
+            data: { subscription },
+          } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+          });
+
+          return () => subscription.unsubscribe();
+        }, []);
+
+        if (loading) {
+          return (
+            <div className="min-h-screen flex items-center justify-center">
+              <div className="text-2xl font-bold text-blue-600">Loading...</div>
+            </div>
+          );
+        }
+
+        return user ? (
+          <TodoApp user={user} onLogout={() => setUser(null)} />
+        ) : (
+          <AuthApp />
+        );
+      }
+
       const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(<TodoApp />);
+      root.render(<App />);
     </script>
   </body>
 </html>

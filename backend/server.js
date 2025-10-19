@@ -1,351 +1,278 @@
 /**
- * 🛠️ Week 4 메인 프로젝트: Todo REST API 서버 (25-40분)
+ * Express AI Proxy Server for Week 5
  *
- * ⚠️ 중요: Week 4의 핵심 프로젝트입니다!
- * Week 3에서 만든 React Todo 앱을 이 서버와 연결하여 Full Stack 앱을 완성합니다.
+ * 이 서버의 역할:
+ * 1. 프론트엔드와 LLM API 사이의 프록시 (API 키 보호)
+ * 2. Rate Limiting (비용 관리)
+ * 3. 에러 처리 및 로깅
+ * 4. 여러 LLM 제공자 지원 (Gemini, OpenAI, Hugging Face)
  *
- * 🎯 목표: Week 3 React 앱 + Week 4 Express 서버 연결
- * - Week 3: localStorage (브라우저 로컬 저장) ❌
- * - Week 4: Express 서버 (중앙 저장, 모두 공유) ✅
- *
- * 💡 학습 방식:
- * 1. GET /api/todos (조회) - ✅ 이미 구현됨 (참고용)
- * 2. POST /api/todos (추가) - ✅ 이미 구현됨 (참고용)
- * 3. PUT /api/todos/:id (수정) - ❌ TODO: 여러분이 구현!
- * 4. DELETE /api/todos/:id (삭제) - ❌ TODO: 여러분이 구현!
- *
- * 🚀 사용 방법:
- * 1. node hands_on_todo_api.js 실행
- * 2. Week 3 React 앱 (index-interactive.html) 열기
- * 3. React 앱에서 fetch 코드 수정 (localStorage → API)
- * 4. React 앱에서 조회/추가 기능 테스트 (이미 작동함)
- * 5. PUT, DELETE API 구현
- * 6. React 앱에서 수정/삭제 기능 테스트
- *
- * 🔌 포트: 3002 (다른 서버와 충돌 방지)
- *
- * 💪 학습 팁:
- * - GET과 POST가 이미 구현되어 있으니 패턴을 참고하세요
- * - PUT과 DELETE는 비슷한 구조입니다
- * - Thunder Client로 먼저 테스트한 후 React 연결 권장
- * - React 앱 연동 가이드는 파일 하단 참고
+ * 실행 방법:
+ * 1. npm install
+ * 2. .env 파일 설정
+ * 3. node server.js
  */
 
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { error } = require("console");
-const sqlite3 = require("sqlite3").verbose();
-const db = new sqlite3.Database("./todos.db"); // 같은 폴더에 todos.db 생성
+const rateLimit = require("express-rate-limit");
 
 const app = express();
-const PORT = 3002;
+const PORT = process.env.PORT || 3002;
 
-// 미들웨어
-app.use(cors()); // React 앱에서 접근 허용
-app.use(express.json()); // JSON 파싱
+// ===================================
+// 미들웨어 설정
+// ===================================
 
-//테이블 생성
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS todos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      text TEXT NOT NULL,
-      completed INTEGER DEFAULT 0
-    )
-  `);
+// CORS 활성화 (프론트엔드에서 접근 가능)
+app.use(cors());
+
+// JSON 파싱
+app.use(express.json());
+
+// 로깅 미들웨어
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
 });
 
-// 데이터 저장소 (메모리 배열 - in-memory database)
-// Week 5에서는 MongoDB로 교체 예정
+// Rate Limiting (비용 관리!)
+const aiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1분
+  max: 10, // 1분에 10번 허용 (테스트/학습용으로 완화)
+  message: {
+    success: false,
+    error: "Too many AI requests. Please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-let nextId = 4; // 다음에 생성할 Todo의 ID
+// ===================================
+// LLM 설정 (Multi-Provider Support)
+// ===================================
 
-// ============================================
-// ✅ 1. 전체 조회 API (이미 구현됨 - 참고용)
-// ============================================
-// React 앱에서 useEffect로 첫 로딩 시 호출
-app.get("/api/todos", (req, res) => {
-  db.all("SELECT * FROM todos", [], (err, rows) => {
-    if (err)
-      return res.status(500).json({ success: false, error: err.message });
+const LLM_CONFIGS = {
+  gemini: {
+    name: "Google Gemini",
+    async generate(prompt) {
+      const { GoogleGenerativeAI } = require("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    },
+  },
+  openai: {
+    name: "OpenAI",
+    async generate(prompt) {
+      const { OpenAI } = require("openai");
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 250,
+        temperature: 0.7,
+      });
+
+      return completion.choices[0].message.content;
+    },
+  },
+  huggingface: {
+    name: "Hugging Face",
+    async generate(prompt) {
+      const response = await fetch(
+        `https://api-inference.huggingface.co/models/${process.env.HUGGINGFACE_MODEL}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 250,
+              temperature: 0.7,
+              top_p: 0.95,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Hugging Face API error");
+      }
+
+      const data = await response.json();
+      return data[0].generated_text;
+    },
+  },
+};
+
+// ===================================
+// API 엔드포인트
+// ===================================
+
+// 헬스 체크
+app.get("/", (req, res) => {
+  res.json({
+    status: "OK",
+    message: "Week 5 AI Proxy Server",
+    provider: process.env.LLM_PROVIDER || "gemini",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// AI 생성 엔드포인트 (Rate Limited)
+app.post("/api/ai/generate", aiLimiter, async (req, res) => {
+  const { prompt } = req.body;
+
+  // 입력 검증
+  if (!prompt || typeof prompt !== "string") {
+    return res.status(400).json({
+      success: false,
+      error: "Prompt is required and must be a string",
+    });
+  }
+
+  if (prompt.length > 2000) {
+    return res.status(400).json({
+      success: false,
+      error: "Prompt is too long (max 2000 characters)",
+    });
+  }
+
+  // LLM 제공자 선택
+  const provider = process.env.LLM_PROVIDER || "gemini";
+  const config = LLM_CONFIGS[provider];
+
+  if (!config) {
+    return res.status(500).json({
+      success: false,
+      error: `Unsupported LLM provider: ${provider}`,
+    });
+  }
+
+  // API 키 확인
+  const apiKey = process.env[`${provider.toUpperCase()}_API_KEY`];
+  if (!apiKey) {
+    console.error(`Missing API key for provider: ${provider}`);
+    return res.status(500).json({
+      success: false,
+      error: "LLM API key not configured",
+    });
+  }
+
+  console.log(`[AI Request] Provider: ${config.name}`);
+  console.log(`[AI Request] Prompt: ${prompt.slice(0, 100)}...`);
+
+  try {
+    const startTime = Date.now();
+
+    // LLM API 호출
+    const text = await config.generate(prompt);
+
+    const duration = Date.now() - startTime;
+    console.log(`[AI Response] Success (${duration}ms)`);
 
     res.json({
       success: true,
-      count: rows.length,
-      data: rows.map((r) => ({
-        id: r.id,
-        text: r.text,
-        completed: !!r.completed, // 0/1 → true/false 변환
-      })),
+      text,
+      provider: config.name,
+      duration,
     });
-  });
+  } catch (error) {
+    console.error("[AI Error]", error);
+
+    // 에러 메시지 정제
+    let errorMessage = error.message;
+
+    if (error.message.includes("API key")) {
+      errorMessage = "Invalid API key. Please check your configuration.";
+    } else if (error.message.includes("quota")) {
+      errorMessage = "API quota exceeded. Please try again later.";
+    } else if (error.message.includes("rate limit")) {
+      errorMessage = "Rate limit exceeded. Please try again later.";
+    }
+
+    res.status(500).json({
+      success: false,
+      error: errorMessage,
+      provider: config.name,
+    });
+  }
 });
 
-// ============================================
-// ✅ 2. 새 항목 추가 API (이미 구현됨 - 참고용)
-// ============================================
-// React 앱에서 입력 폼 제출 시 호출
-app.post("/api/todos", (req, res) => {
-  const { text } = req.body;
-  if (!text || text.trim() === "") {
-    return res
-      .status(400)
-      .json({ success: false, error: "text 필드는 필수입니다" });
+// 할일 분해 전용 엔드포인트 (프롬프트 템플릿 포함)
+app.post("/api/ai/breakdown", aiLimiter, async (req, res) => {
+  const { task } = req.body;
+
+  if (!task || typeof task !== "string") {
+    return res.status(400).json({
+      success: false,
+      error: "Task is required and must be a string",
+    });
   }
 
-  db.run(
-    "INSERT INTO todos (text, completed) VALUES (?, ?)",
-    [text.trim(), 0],
-    function (err) {
-      if (err)
-        return res.status(500).json({ success: false, error: err.message });
+  // 프롬프트 템플릿
+  const prompt = `다음 할일을 구체적이고 실행 가능한 5개 이하의 작은 단계로 나누세요:
+"${task}"
 
-      res.status(201).json({
-        success: true,
-        data: { id: this.lastID, text: text.trim(), completed: false },
-      });
-    }
-  );
+각 단계는 한 줄로 작성하고, 번호를 붙이지 마세요.
+실행 가능한 동사로 시작하세요 (예: "~하기", "~작성하기").
+간결하게 작성하세요 (각 단계는 한 문장).`;
+
+  // generate 엔드포인트 재사용
+  req.body = { prompt };
+  return app._router.handle(req, res, () => {});
 });
 
-// ============================================
-// ❌ TODO 3: 항목 수정 API 구현하기
-// ============================================
-// PUT /api/todos/:id
-// 요청 body: { "completed": true } 또는 { "text": "수정된 텍스트" }
-// 응답: 수정된 todo 객체
-
-// 🎯 여기에 코드를 작성하세요:
-//
-// 힌트 1: app.put('/api/todos/:id', (req, res) => { ... })
-// 힌트 2: const id = parseInt(req.params.id);
-// 힌트 3: const todo = todos.find(t => t.id === id);
-// 힌트 4: if (!todo) return res.status(404).json({ error: ... })
-// 힌트 5: req.body.completed 또는 req.body.text 업데이트
-// 힌트 6: res.json({ success: true, data: todo })
-//
-// 💡 GET과 POST 코드를 참고하여 비슷하게 작성하세요!
-
-app.put("/api/todos/:id", (req, res) => {
-  const { id } = req.params;
-  const { text, completed } = req.body;
-
-  db.run(
-    "UPDATE todos SET text = COALESCE(?, text), completed = COALESCE(?, completed) WHERE id = ?",
-    [text, completed !== undefined ? (completed ? 1 : 0) : null, id],
-    function (err) {
-      if (err)
-        return res.status(500).json({ success: false, error: err.message });
-      if (this.changes === 0)
-        return res
-          .status(404)
-          .json({ success: false, error: "todo를 찾을 수 없습니다" });
-
-      db.get("SELECT * FROM todos WHERE id = ?", [id], (err, row) => {
-        if (err)
-          return res.status(500).json({ success: false, error: err.message });
-        res.json({
-          success: true,
-          data: { ...row, completed: !!row.completed },
-        });
-      });
-    }
-  );
-});
-
-// ============================================
-// ❌ TODO 4: 항목 삭제 API 구현하기
-// ============================================
-// DELETE /api/todos/:id
-// 응답: 204 No Content (성공 시 본문 없음)
-
-// 🎯 여기에 코드를 작성하세요:
-//
-// 힌트 1: app.delete('/api/todos/:id', (req, res) => { ... })
-// 힌트 2: const index = todos.findIndex(t => t.id === id);
-// 힌트 3: if (index === -1) return res.status(404).json({ error: ... })
-// 힌트 4: todos.splice(index, 1);
-// 힌트 5: res.status(204).send(); (본문 없이 성공 응답)
-//
-// 💡 배열에서 항목 제거는 splice() 메서드를 사용합니다!
-
-app.delete("/api/todos/:id", (req, res) => {
-  const { id } = req.params;
-
-  db.run("DELETE FROM todos WHERE id = ?", [id], function (err) {
-    if (err)
-      return res.status(500).json({ success: false, error: err.message });
-    if (this.changes === 0)
-      return res
-        .status(404)
-        .json({ success: false, error: "todo를 찾을 수 없습니다" });
-
-    res.status(204).send();
+// 404 처리
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: "Endpoint not found",
   });
 });
-// ============================================
-// 서버 시작
-// ============================================
 
-app.listen(PORT, () => {
-  console.log("=".repeat(60));
-  console.log("🚀 Week 4 Todo API 서버 실행!");
-  console.log("=".repeat(60));
-  console.log(`\n📍 서버 주소: http://localhost:${PORT}`);
-  console.log("\n✅ 구현 완료: GET, POST");
-  console.log("❌ 구현 필요: PUT, DELETE\n");
-  console.log("🧪 테스트 방법:");
-  console.log("   1. Thunder Client로 API 테스트");
-  console.log("   2. Week 3 React 앱 열기");
-  console.log("   3. React 코드 수정 (파일 하단 가이드 참고)\n");
-  console.log("종료: Ctrl + C\n");
-  console.log("=".repeat(60));
+// 에러 핸들러
+app.use((err, req, res, next) => {
+  console.error("[Server Error]", err);
+  res.status(500).json({
+    success: false,
+    error: "Internal server error",
+  });
 });
 
-/**
- * 🔗 Week 3 React 앱 연동 가이드
- *
- * Week 3 index-interactive.html 파일을 열어서 다음과 같이 수정하세요:
- *
- * ============================================
- * 1. API URL 상수 추가 (파일 상단)
- * ============================================
- * const API_URL = 'http://localhost:3002/api/todos';
- *
- * ============================================
- * 2. useEffect 수정 (localStorage → fetch)
- * ============================================
- * // ❌ 기존 코드 (localStorage)
- * React.useEffect(() => {
- *   const saved = localStorage.getItem('todos');
- *   if (saved) setTodos(JSON.parse(saved));
- * }, []);
- *
- * // ✅ 새 코드 (서버에서 가져오기)
- * React.useEffect(() => {
- *   fetch(API_URL)
- *     .then(res => res.json())
- *     .then(data => {
- *       if (data.success) {
- *         setTodos(data.data);
- *       }
- *     })
- *     .catch(err => console.error('조회 실패:', err));
- * }, []);
- *
- * ============================================
- * 3. addTodo 함수 수정 (localStorage → fetch POST)
- * ============================================
- * // ❌ 기존 코드
- * function addTodo(text) {
- *   const newTodo = { id: Date.now(), text, completed: false };
- *   const newTodos = [newTodo, ...todos];
- *   setTodos(newTodos);
- *   localStorage.setItem('todos', JSON.stringify(newTodos));
- * }
- *
- * // ✅ 새 코드
- * async function addTodo(text) {
- *   try {
- *     const response = await fetch(API_URL, {
- *       method: 'POST',
- *       headers: { 'Content-Type': 'application/json' },
- *       body: JSON.stringify({ text })
- *     });
- *     const data = await response.json();
- *     if (data.success) {
- *       setTodos([data.data, ...todos]);
- *     }
- *   } catch (err) {
- *     console.error('추가 실패:', err);
- *   }
- * }
- *
- * ============================================
- * 4. toggleTodo 함수 수정 (PUT API 호출)
- * ============================================
- * // ✅ PUT API를 먼저 구현한 후 작성하세요!
- * async function toggleTodo(id) {
- *   const todo = todos.find(t => t.id === id);
- *   try {
- *     const response = await fetch(`${API_URL}/${id}`, {
- *       method: 'PUT',
- *       headers: { 'Content-Type': 'application/json' },
- *       body: JSON.stringify({ completed: !todo.completed })
- *     });
- *     const data = await response.json();
- *     if (data.success) {
- *       setTodos(todos.map(t => t.id === id ? data.data : t));
- *     }
- *   } catch (err) {
- *     console.error('수정 실패:', err);
- *   }
- * }
- *
- * ============================================
- * 5. deleteTodo 함수 수정 (DELETE API 호출)
- * ============================================
- * // ✅ DELETE API를 먼저 구현한 후 작성하세요!
- * async function deleteTodo(id) {
- *   try {
- *     const response = await fetch(`${API_URL}/${id}`, {
- *       method: 'DELETE'
- *     });
- *     if (response.status === 204) {
- *       setTodos(todos.filter(t => t.id !== id));
- *     }
- *   } catch (err) {
- *     console.error('삭제 실패:', err);
- *   }
- * }
- *
- * ============================================
- * 6. localStorage.setItem 호출 모두 제거
- * ============================================
- * useEffect에서 localStorage.setItem 관련 코드를 모두 삭제하세요.
- * 이제 데이터는 서버에 저장됩니다!
- *
- * ============================================
- * 🎉 완성 후 체험
- * ============================================
- * 1. Chrome과 Firefox를 동시에 열기
- * 2. 양쪽에서 http://localhost:5500/week03-react-intensive/index-interactive.html 접속
- * 3. 한쪽에서 Todo 추가
- * 4. 다른 쪽 새로고침 → 데이터가 공유됨! 🎉
- *
- * 축하합니다! 여러분은 이제 Full Stack 개발자입니다!
- */
+// ===================================
+// 서버 시작
+// ===================================
 
-/**
- * 🎯 학습 포인트
- *
- * 1. REST API 패턴
- *    - GET    /api/todos     → 전체 조회
- *    - POST   /api/todos     → 생성
- *    - PUT    /api/todos/:id → 수정
- *    - DELETE /api/todos/:id → 삭제
- *
- * 2. HTTP 상태 코드
- *    - 200: 성공 (OK)
- *    - 201: 생성 성공 (Created)
- *    - 204: 성공, 본문 없음 (No Content)
- *    - 400: 잘못된 요청 (Bad Request)
- *    - 404: 찾을 수 없음 (Not Found)
- *
- * 3. Express 핵심 개념
- *    - req.params.id: URL 파라미터
- *    - req.body: POST/PUT 요청의 데이터
- *    - res.json(): JSON 응답
- *    - res.status(): HTTP 상태 코드 설정
- *
- * 4. Week 3 vs Week 4
- *    Week 3: localStorage (브라우저 로컬)
- *    Week 4: Express 서버 (중앙 저장)
- *    → 다른 사용자와 데이터 공유 가능!
- *    → 브라우저를 바꿔도 데이터 유지!
- *
- * 5. Next Steps (Week 5)
- *    - 메모리 배열 → MongoDB
- *    - 서버 재시작해도 데이터 유지
- *    - 사용자 인증 추가
- */
+app.listen(PORT, () => {
+  console.log("\n🚀 Week 5 AI Proxy Server Started!");
+  console.log(`📡 Server: http://localhost:${PORT}`);
+  console.log(`🤖 LLM Provider: ${process.env.LLM_PROVIDER || "gemini"}`);
+  console.log(`⏱️  Rate Limit: 10 requests per 1 minute (학습용 완화 설정)`);
+  console.log("\n📋 Available Endpoints:");
+  console.log(`  GET  /                  - Health check`);
+  console.log(`  POST /api/ai/generate   - General AI generation`);
+  console.log(`  POST /api/ai/breakdown  - Task breakdown (preset prompt)`);
+  console.log("\n💡 Frontend URL: Open index.html in browser");
+  console.log("⚠️  Remember: NEVER expose API keys in frontend!\n");
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("\n👋 Shutting down gracefully...");
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  console.log("\n👋 Shutting down gracefully...");
+  process.exit(0);
+});
