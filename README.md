@@ -51,8 +51,7 @@ node server.js
 
 4. 프론트엔드 실행
 cd frontend
-python -m http.server 8000
-# → http://localhost:8000 접속
+
 
 📊 API 엔드포인트
 
