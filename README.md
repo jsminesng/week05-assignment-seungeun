@@ -1,87 +1,109 @@
-Week 5 Assignment: AI Todo Breakdown App
-🎯 프로젝트 개요
+# Week 5 Assignment: AI Todo Breakdown App
 
-Supabase 기반 Todo 앱에 AI 기능을 결합하여, 복잡한 작업을 자동으로 작은 단계로 분해하는 기능을 구현했습니다.
-Express 서버를 프록시로 두어 API 키를 보호하고, Rate Limiting 및 에러 처리도 적용했습니다.
+## 🎯 프로젝트 개요
+Supabase 기반 Todo 앱에 **AI 기능**을 결합하여, 복잡한 작업을 자동으로 작은 단계로 분해하는 기능을 구현했습니다.  
+Express 서버를 프록시로 두어 API 키를 보호하고, Rate Limiting 및 에러 처리도 적용했습니다.  
 
-✨ 주요 기능
-✅ Todo 기본 기능
+---
 
-사용자 인증 (회원가입 / 로그인)
+## ✨ 주요 기능
 
-Todo 추가, 수정, 삭제 (CRUD)
+### ✅ Todo 기본 기능
+- 사용자 인증 (회원가입 / 로그인)
+- Todo 추가, 수정, 삭제 (CRUD)
+- 사용자별 데이터 분리 (Supabase RLS)
+- 전체 삭제 및 진행 현황 통계
 
-사용자별 데이터 분리 (Supabase RLS)
+### 🤖 AI 기능 (Gemini 기반)
+- 큰 작업을 5개 이하의 작은 단계로 자동 분해
+- 선택한 단계만 Todo에 추가 가능
+- 요청 제한 (1분당 10회)으로 서버 보호
 
-전체 삭제 및 진행 현황 통계
+---
 
-🤖 AI 기능 (Gemini 기반)
+## 🛠 기술 스택
+**Frontend**  
+- React (CDN)  
+- Tailwind CSS  
+- Supabase  
 
-큰 작업을 5개 이하의 작은 단계로 자동 분해
+**Backend**  
+- Express.js  
+- Google Gemini API  
+- express-rate-limit  
+- CORS  
 
-선택한 단계만 Todo에 추가 가능
+---
 
-요청 제한 (1분당 10회)으로 서버 보호
+## 🚀 실행 방법
 
-🛠 기술 스택
-
-Frontend: React(CDN), TailwindCSS, Supabase
-
-Backend: Express.js, Google Gemini API, express-rate-limit, CORS
-
-🚀 실행 방법
-1. 클론 & 설치
+### 1. 클론 & 설치
+```bash
 git clone https://github.com/[your-username]/week5-assignment.git
 cd week5-assignment/backend
 npm install
+```
 
-2. 환경 변수 설정
-
-backend/.env 파일 생성:
-
+### 2. 환경 변수 설정
+`backend/.env` 파일 생성:
+```env
 PORT=3002
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your-gemini-api-key
+```
 
-3. 서버 실행
+### 3. 서버 실행
+```bash
 node server.js
+```
 
+서버 주소:  
+👉 `http://localhost:3002`
 
-서버 주소: http://localhost:3002
-
-4. 프론트엔드 실행
+### 4. 프론트엔드 실행
+```bash
 cd frontend
+python -m http.server 8000
+```
+👉 브라우저에서 `http://localhost:8000` 접속
 
+---
 
-📊 API 엔드포인트
+## 📊 API 엔드포인트
+- `GET /` → 서버 상태 확인  
+- `POST /api/ai/generate` → AI 응답 생성  
+- `POST /api/ai/breakdown` → 할일 자동 분해  
 
-GET / → 서버 상태 확인
+---
 
-POST /api/ai/generate → AI 응답 생성
-
-POST /api/ai/breakdown → 할일 분해 전용
-
-📁 프로젝트 구조
+## 📁 프로젝트 구조
+```
 week5-assignment/
-├── backend/      # Express API 서버
-│   └── server.js
-├── frontend/     # 클라이언트 (index.html 등)
+├── backend/
+│   ├── server.js      # Express 서버
+│   └── .env           # 환경 변수 (Git에 업로드 금지)
+├── frontend/
+│   ├── index.html     # 메인 UI
+│   └── style.css
 └── README.md
+```
 
-🔒 보안
+---
 
-API 키는 서버에서만 관리 (프론트엔드에 직접 노출 ❌)
+## 🔒 보안
+- API 키는 서버에서만 관리 (프론트엔드에 직접 노출 ❌)  
+- Supabase RLS로 사용자별 데이터 보호  
+- Rate Limiting으로 과도한 요청 차단  
 
-Supabase RLS로 사용자별 데이터 보호
+---
 
-Rate Limiting으로 과도한 요청 차단
+## 🔮 향후 개선 사항
+- AI 히스토리 저장  
+- AI 응답 편집 기능  
+- OpenAI / Hugging Face 추가 지원  
+- 모바일 UI 최적화  
 
-🔮 향후 개선
+---
 
-AI 히스토리 저장
-
-응답 편집 기능
-
-Hugging Face / OpenAI 추가 지원
-
-모바일 UI 최적화
+✍️ **Week 5 Assignment 완료! 🎉**  
+AI와 Todo 앱을 결합해 더 스마트한 작업 관리가 가능해졌습니다.
